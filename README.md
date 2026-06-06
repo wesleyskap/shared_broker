@@ -44,36 +44,55 @@ bundle install
 
 ## Configuration
 
-Create an initializer in your Rails application (`config/initializers/shared_broker.rb`):
+Create an initializer in your Rails application (`config/initializers/shared_broker.rb`). Below is the breakdown of what is **required** versus what is **optional**.
+
+### 1. Required Configuration (Minimum Setup)
+
+You must configure the adapter depending on the environment, initialize the client, and configure the payload encryption key (required since AES-256-GCM is active by default):
 
 ```ruby
 require "shared_broker"
 
-# 1. Configure Validation Schemas (dry-schema)
-user_created_schema = Dry::Schema.Params do
-  required(:id).filled(:integer)
-  required(:email).filled(:string)
-end
-SharedBroker::Validation.register("user.created", user_created_schema)
-
-# 2. Configure Payload Encryption Key (AES-256-GCM)
-# Expects a 32-byte string. Default key is used in development if ENV is not set.
+# A. Configure Payload Encryption Key (AES-256-GCM)
+# Expects a 32-byte string. Use a secure production key in production.
 SharedBroker.encryption_key = ENV.fetch("SHARED_BROKER_ENCRYPTION_KEY") { "a" * 32 }
 
-# 3. Configure the Adapter based on Environment
+# B. Configure the Adapter based on Environment
 if Rails.env.test?
   # In-memory adapter prevents external queue dependency during unit tests
   BROKER_ADAPTER = SharedBroker::Adapters::InMemory.new
-elsif Rails.env.production?
-  # High-throughput production setup using Kafka
-  BROKER_ADAPTER = SharedBroker::Adapters::Kafka.new(seed_brokers: ["kafka-1:9092", "kafka-2:9092"])
 else
-  # Connects to RabbitMQ or Redis for development
+  # Connects to real RabbitMQ broker
   amqp_url = ENV.fetch("RABBITMQ_URL") { "amqp://guest:guest@localhost:5672" }
   BROKER_ADAPTER = SharedBroker::Adapters::RabbitMQ.new(amqp_url: amqp_url)
 end
 
-# 4. Instantiate the Client by Injecting the Adapter and optional custom Circuit Breaker configuration
+# C. Instantiate the Client by Injecting the Adapter
+SPOT_BROKER = SharedBroker::Client.new(adapter: BROKER_ADAPTER)
+```
+
+---
+
+### 2. Optional Configuration
+
+These features can be configured optionally depending on your needs.
+
+#### A. Event Payload Validation (dry-schema)
+Register schemas to validate payload structure automatically on outbound (`publish`) and inbound (`subscribe`) boundaries:
+
+```ruby
+user_created_schema = Dry::Schema.Params do
+  required(:id).filled(:integer)
+  required(:email).filled(:string)
+end
+
+SharedBroker::Validation.register("user.created", user_created_schema)
+```
+
+#### B. Custom Circuit Breaker
+By default, the client instantiates a standard Circuit Breaker. You can provide a custom one to tune the failure threshold and recovery window:
+
+```ruby
 custom_circuit_breaker = SharedBroker::CircuitBreaker.new(
   failure_threshold: 5,   # trip circuit after 5 failures
   recovery_timeout: 30    # wait 30 seconds before attempting recovery
@@ -83,8 +102,12 @@ SPOT_BROKER = SharedBroker::Client.new(
   adapter: BROKER_ADAPTER,
   circuit_breaker: custom_circuit_breaker
 )
+```
 
-# 5. Initialize Telemetry (OpenTelemetry)
+#### C. Initialize Distributed Tracing (OpenTelemetry)
+Initialize the OpenTelemetry SDK with auto-instrumentation for the microservice:
+
+```ruby
 SharedBroker::Telemetry.configure(service_name: "my_microservice")
 ```
 
