@@ -9,8 +9,13 @@ The library implements the **Adapter Pattern** to decouple your application from
 ## Key Features
 
 - **Pluggable Messaging**: Adapter pattern to decouple Rails from physical messaging queues.
-- **RabbitMQ Adapter**: Robust, persistent connection wrapper using the `bunny` gem.
-- **InMemory Adapter**: Synchronous local queue simulation for fast TDD testing (no inline external I/O stubs required).
+- **Resilience & Fault Tolerance**:
+  - **Automatic Retry**: Automatic retry mechanism on message processing failures using exponential backoff.
+  - **Dead Letter Queue (DLQ)**: Messages that exhaust their retries are automatically moved to a DLQ (`#{queue_name}.dlq`) containing error metadata headers (`x_exception_class`, `x_exception_message`, `x_failed_at`).
+  - **Circuit Breaker**: Integrated thread-safe Circuit Breaker wrapping message publication to prevent cascading failures.
+- **Security & Data Validation**:
+  - **Strict Schema Validation**: Integration with `dry-schema` to validate message structures on both publish (boundaries out) and subscribe (boundaries in).
+  - **Transparent Payload Encryption**: Payloads are automatically encrypted at rest using AES-256-GCM via `SharedBroker.encryption_key`.
 - **Integrated OpenTelemetry**: Centralized SDK configuration with auto-instrumentation for all supported libraries (ActiveRecord, Bunny, Faraday, Rails, PG, etc.).
 
 ---
@@ -40,7 +45,18 @@ Create an initializer in your Rails application (`config/initializers/shared_bro
 ```ruby
 require "shared_broker"
 
-# 1. Configure the Adapter based on Environment
+# 1. Configure Validation Schemas (dry-schema)
+user_created_schema = Dry::Schema.Params do
+  required(:id).filled(:integer)
+  required(:email).filled(:string)
+end
+SharedBroker::Validation.register("user.created", user_created_schema)
+
+# 2. Configure Payload Encryption Key (AES-256-GCM)
+# Expects a 32-byte string. Default key is used in development if ENV is not set.
+SharedBroker.encryption_key = ENV.fetch("SHARED_BROKER_ENCRYPTION_KEY") { "a" * 32 }
+
+# 3. Configure the Adapter based on Environment
 if Rails.env.test?
   # In-memory adapter prevents external queue dependency during unit tests
   BROKER_ADAPTER = SharedBroker::Adapters::InMemory.new
@@ -50,10 +66,18 @@ else
   BROKER_ADAPTER = SharedBroker::Adapters::RabbitMQ.new(amqp_url: amqp_url)
 end
 
-# 2. Instantiate the Client by Injecting the Adapter
-SPOT_BROKER = SharedBroker::Client.new(adapter: BROKER_ADAPTER)
+# 4. Instantiate the Client by Injecting the Adapter and optional custom Circuit Breaker configuration
+custom_circuit_breaker = SharedBroker::CircuitBreaker.new(
+  failure_threshold: 5,   # trip circuit after 5 failures
+  recovery_timeout: 30    # wait 30 seconds before attempting recovery
+)
 
-# 3. Initialize Telemetry (OpenTelemetry)
+SPOT_BROKER = SharedBroker::Client.new(
+  adapter: BROKER_ADAPTER,
+  circuit_breaker: custom_circuit_breaker
+)
+
+# 5. Initialize Telemetry (OpenTelemetry)
 SharedBroker::Telemetry.configure(service_name: "my_microservice")
 ```
 
@@ -62,25 +86,24 @@ SharedBroker::Telemetry.configure(service_name: "my_microservice")
 ## Usage
 
 ### Publishing Events
-Send simple events by passing the topic name and a structured payload (must be a `Hash`):
+Send events by passing the topic name and a structured payload (must be a `Hash`):
 
 ```ruby
 event_data = {
   id: 1,
-  name: "Eiffel Tower",
-  latitude: 48.8584,
-  longitude: 2.2945
+  email: "test@example.com"
 }
 
-SPOT_BROKER.publish("spot.created", event_data)
+# The payload will be validated against its dry-schema, encrypted, and published safely.
+SPOT_BROKER.publish("user.created", event_data)
 ```
 
-### Subscribing to Events (Consumer)
-To start a persistent event subscriber daemon, register a queue associated with the topic:
+### Subscribing to Events (Consumer with Retry and DLQ)
+To start a persistent event subscriber daemon, register a queue associated with the topic. You can customize the retries and backoff rate:
 
 ```ruby
-SPOT_BROKER.subscribe("spot.created", "my_consumption_queue") do |payload|
-  puts "Event successfully consumed! ID: #{payload[:id]}"
+SPOT_BROKER.subscribe("user.created", "my_consumption_queue", max_retries: 3, backoff_base: 2) do |payload|
+  puts "Decrypted event successfully validated & consumed! ID: #{payload[:id]}"
   # execute your business logic here...
 end
 ```

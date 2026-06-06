@@ -3,11 +3,11 @@
 module SharedBroker
   module Adapters
     class Base
-      def publish(topic, message)
+      def publish(topic, message, correlation_id: nil)
         raise NotImplementedError, "#{self.class.name} must implement #publish"
       end
 
-      def subscribe(topic, queue_name, &block)
+      def subscribe(topic, queue_name, max_retries: 3, backoff_base: 2, &block)
         raise NotImplementedError, "#{self.class.name} must implement #subscribe"
       end
     end

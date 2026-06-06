@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "time"
 require_relative "base"
 
 module SharedBroker
@@ -10,13 +11,36 @@ module SharedBroker
         @subscribers = Hash.new { |h, k| h[k] = [] }
       end
 
-      def publish(topic, message)
-        @storage[topic] << message
-        @subscribers[topic].each { |callback| callback.call(message) }
+      def publish(topic, message, correlation_id: nil)
+        msg_with_metadata = message.merge(_correlation_id: correlation_id)
+        @storage[topic] << msg_with_metadata
+        
+        @subscribers[topic].each do |sub|
+          attempts = 0
+          begin
+            sub[:block].call(msg_with_metadata)
+          rescue => e
+            attempts += 1
+            if attempts <= sub[:max_retries]
+              # Sleep briefly or not at all in memory to keep tests fast
+              sleep(0.001 * sub[:backoff_base]**attempts)
+              retry
+            else
+              dlq_topic = "#{sub[:queue_name]}.dlq"
+              dlq_msg = msg_with_metadata.merge(
+                _x_original_routing_key: topic,
+                _x_failed_at: Time.now.utc.iso8601,
+                _x_exception_class: e.class.name,
+                _x_exception_message: e.message
+              )
+              @storage[dlq_topic] << dlq_msg
+            end
+          end
+        end
       end
 
-      def subscribe(topic, _queue_name, &block)
-        @subscribers[topic] << block
+      def subscribe(topic, queue_name, max_retries: 3, backoff_base: 2, &block)
+        @subscribers[topic] << { queue_name: queue_name, max_retries: max_retries, backoff_base: backoff_base, block: block }
       end
 
       def published_messages(topic)
