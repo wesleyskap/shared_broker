@@ -2,6 +2,58 @@
 
 require "test_helper"
 
+module MockKafka
+  class Client
+    attr_reader :delivered_messages
+    def initialize(*args); @delivered_messages = []; end
+    def deliver_message(value, topic:, headers: {})
+      @delivered_messages << { value: value, topic: topic, headers: headers }
+    end
+    def consumer(group_id:); Consumer.new(self); end
+  end
+
+  class Consumer
+    def initialize(client); @client = client; end
+    def subscribe(topic); @topic = topic; end
+    def each_message; yield Message.new({ key: "val" }.to_json, { "correlation_id" => "corr-kafka" }); end
+  end
+
+  class Message
+    attr_reader :value, :headers
+    def initialize(value, headers); @value = value; @headers = headers; end
+  end
+end
+
+module MockRedis
+  class Client
+    attr_reader :published, :lists
+    def initialize(*args)
+      @published = []
+      @lists = Hash.new { |h, k| h[k] = [] }
+    end
+    def publish(channel, message); @published << { channel: channel, message: message }; end
+    def subscribe(channel); yield Subscription.new(self, channel); end
+    def rpush(key, value); @lists[key] << value; end
+  end
+
+  class Subscription
+    def initialize(client, channel); @client = client; @channel = channel; end
+    def message; yield @channel, { key: "val" }.to_json; end
+  end
+end
+
+unless defined?(::Kafka)
+  module ::Kafka
+    def self.new(*args); MockKafka::Client.new; end
+  end
+end
+
+unless defined?(::Redis)
+  module ::Redis
+    def self.new(*args); MockRedis::Client.new; end
+  end
+end
+
 class SharedBrokerTest < Minitest::Test
   def setup
     @in_memory_adapter = SharedBroker::Adapters::InMemory.new
@@ -135,5 +187,32 @@ class SharedBrokerTest < Minitest::Test
     assert_equal "sensitive data", received.first[:secret]
     
     SharedBroker.encryption_key = "a" * 32
+  end
+
+  def test_kafka_adapter_publish
+    kafka_mock = MockKafka::Client.new
+    ::Kafka.define_singleton_method(:new) { |*args| kafka_mock } rescue nil
+    
+    adapter = SharedBroker::Adapters::Kafka.new(seed_brokers: ["localhost:9092"])
+    client = SharedBroker::Client.new(adapter: adapter)
+    
+    client.publish("kafka.topic", { data: 123 }, correlation_id: "corr-1")
+    
+    assert_equal 1, kafka_mock.delivered_messages.size
+    assert_equal "kafka.topic", kafka_mock.delivered_messages.first[:topic]
+    assert_equal "corr-1", kafka_mock.delivered_messages.first[:headers]["correlation_id"]
+  end
+
+  def test_redis_adapter_publish
+    redis_mock = MockRedis::Client.new
+    ::Redis.define_singleton_method(:new) { |*args| redis_mock } rescue nil
+    
+    adapter = SharedBroker::Adapters::Redis.new(redis_url: "redis://localhost:6379")
+    client = SharedBroker::Client.new(adapter: adapter)
+    
+    client.publish("redis.topic", { data: 456 }, correlation_id: "corr-2")
+    
+    assert_equal 1, redis_mock.published.size
+    assert_equal "redis.topic", redis_mock.published.first[:channel]
   end
 end

@@ -8,7 +8,11 @@ module SharedBroker
   module Adapters
     class Kafka < Base
       def initialize(seed_brokers:, client_id: "shared_broker")
-        require "kafka"
+        begin
+          require "kafka"
+        rescue LoadError
+          raise unless defined?(::Kafka)
+        end
         @kafka = ::Kafka.new(seed_brokers, client_id: client_id)
       end
 

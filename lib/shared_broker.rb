@@ -8,6 +8,8 @@ require_relative "shared_broker/cipher"
 require_relative "shared_broker/adapters/base"
 require_relative "shared_broker/adapters/in_memory"
 require_relative "shared_broker/adapters/rabbit_mq"
+require_relative "shared_broker/adapters/kafka"
+require_relative "shared_broker/adapters/redis"
 
 module SharedBroker
   class << self

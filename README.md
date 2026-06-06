@@ -2,16 +2,20 @@
 
 `SharedBroker` is a high-performance Ruby library designed to simplify event-based communication (asynchronous messaging) and telemetry (observability) in Rails microservice architectures.
 
-The library implements the **Adapter Pattern** to decouple your application from physical queue providers (like RabbitMQ), allowing easy broker swapping and clean synchronous testing with an in-memory adapter.
+The library implements the **Adapter Pattern** to decouple your application from physical queue providers, allowing easy broker swapping and clean synchronous testing with an in-memory adapter.
 
 ---
 
 ## Key Features
 
-- **Pluggable Messaging**: Adapter pattern to decouple Rails from physical messaging queues.
+- **Pluggable Messaging**: Adapter pattern supporting:
+  - `InMemory`: Synchronous local simulation for fast TDD testing (no inline external I/O stubs required).
+  - `RabbitMQ`: Robust connection using the `bunny` gem.
+  - `Kafka`: High-throughput adapter using the `kafka` gem.
+  - `Redis`: Light-weight Pub/Sub broker using the `redis` gem.
 - **Resilience & Fault Tolerance**:
   - **Automatic Retry**: Automatic retry mechanism on message processing failures using exponential backoff.
-  - **Dead Letter Queue (DLQ)**: Messages that exhaust their retries are automatically moved to a DLQ (`#{queue_name}.dlq`) containing error metadata headers (`x_exception_class`, `x_exception_message`, `x_failed_at`).
+  - **Dead Letter Queue (DLQ)**: Messages that exhaust their retries are automatically moved to a DLQ (`#{queue_name}.dlq` or a custom topic/list depending on the adapter) containing error metadata headers.
   - **Circuit Breaker**: Integrated thread-safe Circuit Breaker wrapping message publication to prevent cascading failures.
 - **Security & Data Validation**:
   - **Strict Schema Validation**: Integration with `dry-schema` to validate message structures on both publish (boundaries out) and subscribe (boundaries in).
@@ -60,8 +64,11 @@ SharedBroker.encryption_key = ENV.fetch("SHARED_BROKER_ENCRYPTION_KEY") { "a" * 
 if Rails.env.test?
   # In-memory adapter prevents external queue dependency during unit tests
   BROKER_ADAPTER = SharedBroker::Adapters::InMemory.new
+elsif Rails.env.production?
+  # High-throughput production setup using Kafka
+  BROKER_ADAPTER = SharedBroker::Adapters::Kafka.new(seed_brokers: ["kafka-1:9092", "kafka-2:9092"])
 else
-  # Connects to real RabbitMQ broker
+  # Connects to RabbitMQ or Redis for development
   amqp_url = ENV.fetch("RABBITMQ_URL") { "amqp://guest:guest@localhost:5672" }
   BROKER_ADAPTER = SharedBroker::Adapters::RabbitMQ.new(amqp_url: amqp_url)
 end
@@ -99,7 +106,7 @@ SPOT_BROKER.publish("user.created", event_data)
 ```
 
 ### Subscribing to Events (Consumer with Retry and DLQ)
-To start a persistent event subscriber daemon, register a queue associated with the topic. You can customize the retries and backoff rate:
+To start a persistent event subscriber daemon, register a queue/group name associated with the topic. You can customize the retries and backoff rate:
 
 ```ruby
 SPOT_BROKER.subscribe("user.created", "my_consumption_queue", max_retries: 3, backoff_base: 2) do |payload|

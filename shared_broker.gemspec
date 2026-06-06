@@ -10,12 +10,12 @@ Gem::Specification.new do |spec|
 
   spec.summary = "Pluggable message broker abstraction with RabbitMQ and OpenTelemetry support."
   spec.description = "Shared library for asynchronous messaging, distributed tracing, and customizable adapters."
-  spec.homepage = "https://github.com/onkai/shared_broker"
+  spec.homepage = "https://github.com/wesleyskap/shared_broker"
   spec.required_ruby_version = ">= 3.0.0"
   spec.license = "MIT"
 
   spec.metadata["source_code_uri"] = spec.homepage
-  spec.metadata["changelog_uri"] = "https://github.com/onkai/shared_broker/blob/main/CHANGELOG.md"
+  spec.metadata["changelog_uri"] = "https://github.com/wesleyskap/shared_broker/blob/main/CHANGELOG.md"
 
 
   # Specify which files should be added to the gem when it is released.
