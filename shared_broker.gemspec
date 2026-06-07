@@ -5,8 +5,8 @@ require_relative "lib/shared_broker/version"
 Gem::Specification.new do |spec|
   spec.name = "shared_broker"
   spec.version = SharedBroker::VERSION
-  spec.authors = ["Gemini Antigravity"]
-  spec.email = ["antigravity@google.com"]
+  spec.authors = ["Wesley Lima"]
+  spec.email = ["wesleyskap@gmail.com"]
 
   spec.summary = "Pluggable message broker abstraction with RabbitMQ and OpenTelemetry support."
   spec.description = "Shared library for asynchronous messaging, distributed tracing, and customizable adapters."
@@ -15,7 +15,7 @@ Gem::Specification.new do |spec|
   spec.license = "MIT"
 
   spec.metadata["source_code_uri"] = spec.homepage
-  spec.metadata["changelog_uri"] = "https://github.com/wesleyskap/shared_broker/blob/main/CHANGELOG.md"
+  spec.metadata["changelog_uri"] = "https://github.com/wesleyskap/shared_broker/blob/master/CHANGELOG.md"
 
 
   # Specify which files should be added to the gem when it is released.

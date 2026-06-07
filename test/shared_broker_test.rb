@@ -215,4 +215,36 @@ class SharedBrokerTest < Minitest::Test
     assert_equal 1, redis_mock.published.size
     assert_equal "redis.topic", redis_mock.published.first[:channel]
   end
+
+  def test_middleware_pipeline_execution
+    order = []
+    m1 = ->(topic, msg, meta, &block) { order << "m1_start"; block.call; order << "m1_end" }
+    m2 = ->(topic, msg, meta, &block) { order << "m2_start"; block.call; order << "m2_end" }
+    
+    client = SharedBroker::Client.new(adapter: @in_memory_adapter, middlewares: [m1, m2])
+    client.publish("test.middleware", { data: 1 })
+    
+    assert_equal ["m1_start", "m2_start", "m2_end", "m1_end"], order
+  end
+
+  def test_opentelemetry_propagation
+    OpenTelemetry.propagation = OpenTelemetry::Trace::Propagation::TraceContext::TextMapPropagator.new
+
+    span_context = OpenTelemetry::Trace::SpanContext.new(
+      trace_id: "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x10\x11\x12\x13\x14\x15\x16",
+      span_id: "\x01\x02\x03\x04\x05\x06\x07\x08"
+    )
+    parent_span = OpenTelemetry::Trace::Span.new(span_context: span_context)
+    
+    OpenTelemetry::Context.with_current(OpenTelemetry::Trace.context_with_span(parent_span)) do
+      client = SharedBroker::Client.new(adapter: @in_memory_adapter)
+      client.publish("test.otel", { payload: "traced" })
+      
+      published = @in_memory_adapter.published_messages("test.otel").first
+      decrypted = SharedBroker::Cipher.decrypt(published, SharedBroker.encryption_key)
+      
+      assert decrypted[:_traceparent]
+      assert_match(/00-01020304050607080910111213141516-0102030405060708-00/, decrypted[:_traceparent])
+    end
+  end
 end
