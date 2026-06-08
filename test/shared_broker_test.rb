@@ -247,4 +247,51 @@ class SharedBrokerTest < Minitest::Test
       assert_match(/00-01020304050607080910111213141516-0102030405060708-00/, decrypted[:_traceparent])
     end
   end
+
+  def test_multi_adapter_routing
+    adapter_a = SharedBroker::Adapters::InMemory.new
+    adapter_b = SharedBroker::Adapters::InMemory.new
+    adapter_c = SharedBroker::Adapters::InMemory.new
+
+    client = SharedBroker::Client.new(
+      adapters: {
+        a: adapter_a,
+        b: adapter_b,
+        c: adapter_c
+      },
+      routing: {
+        "exact.topic" => :a,
+        "wildcard.*" => :b,
+        "*" => :c
+      }
+    )
+
+    client.publish("exact.topic", { msg: "A" })
+    assert_equal 1, adapter_a.published_messages("exact.topic")&.size
+    assert_empty adapter_b.published_messages("exact.topic")
+    assert_empty adapter_c.published_messages("exact.topic")
+
+    client.publish("wildcard.test", { msg: "B" })
+    assert_empty adapter_a.published_messages("wildcard.test")
+    assert_equal 1, adapter_b.published_messages("wildcard.test")&.size
+    assert_empty adapter_c.published_messages("wildcard.test")
+
+    client.publish("other.topic", { msg: "C" })
+    assert_empty adapter_a.published_messages("other.topic")
+    assert_empty adapter_b.published_messages("other.topic")
+    assert_equal 1, adapter_c.published_messages("other.topic")&.size
+  end
+
+  def test_multi_adapter_unresolved_route_error
+    adapter_a = SharedBroker::Adapters::InMemory.new
+    client = SharedBroker::Client.new(
+      adapters: { a: adapter_a },
+      routing: { "exact.topic" => :a }
+    )
+
+    error = assert_raises(RuntimeError) do
+      client.publish("unresolved.topic", { msg: "fail" })
+    end
+    assert_match(/No adapter resolved for topic: "unresolved\.topic"/, error.message)
+  end
 end

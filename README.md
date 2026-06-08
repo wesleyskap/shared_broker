@@ -1,3 +1,5 @@
+[![Gem Version](https://badge.fury.io/rb/shared_broker.svg?icon=si%3Arubygems)](https://badge.fury.io/rb/shared_broker)
+
 # SharedBroker
 
 `SharedBroker` is a high-performance Ruby library designed to simplify event-based communication (asynchronous messaging) and telemetry (observability) in Rails microservice architectures.
@@ -109,6 +111,34 @@ Initialize the OpenTelemetry SDK with auto-instrumentation for the microservice:
 
 ```ruby
 SharedBroker::Telemetry.configure(service_name: "my_microservice")
+```
+
+#### D. Hybrid Multi-Adapter Routing
+If your system requires directing different topics to different message brokers (e.g., Kafka for telemetry, RabbitMQ for transactional events, Redis for quick cache invalidation), you can configure `SharedBroker::Client` with multiple adapters and a routing table:
+
+```ruby
+# 1. Initialize physical adapters
+rabbit_adapter = SharedBroker::Adapters::RabbitMQ.new(amqp_url: "amqp://guest:guest@localhost:5672")
+kafka_adapter  = SharedBroker::Adapters::Kafka.new(seed_brokers: ["localhost:9092"])
+redis_adapter  = SharedBroker::Adapters::Redis.new(redis_url: "redis://localhost:6379")
+
+# 2. Instantiate the Client in Hybrid mode
+HYBRID_BROKER = SharedBroker::Client.new(
+  adapters: {
+    rabbitmq: rabbit_adapter,
+    kafka:    kafka_adapter,
+    redis:    redis_adapter
+  },
+  routing: {
+    # Exact routing match
+    "payment.processed" => :rabbitmq,
+    # Wildcard routing match
+    "telemetry.*"       => :kafka,
+    "cache.*"           => :redis,
+    # Default fallback routing
+    "*"                 => :rabbitmq
+  }
+)
 ```
 
 ---
