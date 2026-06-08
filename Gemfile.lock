@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    shared_broker (1.1.1)
+    shared_broker (1.2.0)
       bunny (~> 2.22)
       dry-schema (~> 1.13)
       opentelemetry-api (~> 1.2)
