@@ -33,6 +33,7 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency "bunny", "~> 2.22"
   spec.add_dependency "dry-schema", "~> 1.13"
+  spec.add_dependency "json-schema", "~> 4.0"
   spec.add_dependency "opentelemetry-api", "~> 1.2"
   spec.add_dependency "opentelemetry-sdk", "~> 1.2"
   spec.add_dependency "opentelemetry-exporter-otlp", "~> 0.25"

@@ -1,32 +1,27 @@
 # frozen_string_literal: true
 
-require "dry-schema"
-
 module SharedBroker
   module Validation
     class ValidationError < StandardError; end
 
-    @schemas = {}
-
     def self.register(topic, schema)
-      unless schema.respond_to?(:call)
-        raise ArgumentError, "Expected schema to respond to :call, got #{schema.class} with value #{schema.inspect}"
+      provider = SharedBroker::SchemaRegistry.provider || SharedBroker::SchemaRegistry.send(:default_provider)
+      if provider.respond_to?(:register)
+        provider.register(topic, schema)
+      else
+        raise RuntimeError, "Current SchemaRegistry provider #{provider.class} does not support local registration. Expected a provider that responds to :register."
       end
-      @schemas[topic.to_s] = schema
     end
 
     def self.validate!(topic, message)
-      schema = @schemas[topic.to_s]
-      return unless schema
-
-      result = schema.call(message)
-      unless result.success?
-        raise ValidationError, "Schema validation failed for topic #{topic.inspect}. Expected keys: #{schema.rules.keys.inspect}, got payload: #{message.inspect}. Errors: #{result.errors.to_h.inspect}"
-      end
+      SharedBroker::SchemaRegistry.validate!(topic, message)
     end
 
     def self.clear
-      @schemas.clear
+      SharedBroker::SchemaRegistry.clear_cache
+      provider = SharedBroker::SchemaRegistry.provider || SharedBroker::SchemaRegistry.send(:default_provider)
+      provider.clear if provider.respond_to?(:clear)
     end
   end
 end
+

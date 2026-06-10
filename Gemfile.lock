@@ -1,9 +1,10 @@
 PATH
   remote: .
   specs:
-    shared_broker (1.2.0)
+    shared_broker (1.3.0)
       bunny (~> 2.22)
       dry-schema (~> 1.13)
+      json-schema (~> 4.0)
       opentelemetry-api (~> 1.2)
       opentelemetry-exporter-otlp (~> 0.25)
       opentelemetry-instrumentation-all (~> 0.25)
@@ -12,6 +13,8 @@ PATH
 GEM
   remote: https://rubygems.org/
   specs:
+    addressable (2.9.0)
+      public_suffix (>= 2.0.2, < 8.0)
     amq-protocol (2.8.0)
     bigdecimal (4.1.2)
     bunny (2.24.0)
@@ -55,6 +58,8 @@ GEM
       rake (~> 13.3)
     googleapis-common-protos-types (1.23.0)
       google-protobuf (~> 4.26)
+    json-schema (4.3.1)
+      addressable (>= 2.8)
     logger (1.7.0)
     minitest (5.27.0)
     opentelemetry-api (1.10.0)
@@ -232,6 +237,7 @@ GEM
       opentelemetry-semantic_conventions
     opentelemetry-semantic_conventions (1.39.0)
       opentelemetry-api (~> 1.0)
+    public_suffix (7.0.5)
     rake (13.4.2)
     rbtree (0.4.6)
     sorted_set (1.1.0)
