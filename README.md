@@ -177,13 +177,25 @@ event_data = {
 SPOT_BROKER.publish("user.created", event_data)
 ```
 
-### Subscribing to Events (Consumer with Retry and DLQ)
-To start a persistent event subscriber daemon, register a queue/group name associated with the topic. You can customize the retries and backoff rate:
+### Subscribing to Events (Consumer with Retry, DLQ, Concurrency & Backpressure)
+To start a persistent event subscriber daemon, register a queue/group name associated with the topic. You can customize the retries, backoff rate, concurrency limits, and dynamic backpressure checks:
 
 ```ruby
+# Basic subscriber
 SPOT_BROKER.subscribe("user.created", "my_consumption_queue", max_retries: 3, backoff_base: 2) do |payload|
   puts "Decrypted event successfully validated & consumed! ID: #{payload[:id]}"
   # execute your business logic here...
+end
+
+# Advanced subscriber with Concurrency limits and Dynamic Backpressure
+SPOT_BROKER.subscribe(
+  "user.created",
+  "my_consumption_queue",
+  max_concurrency: 5,                       # Process up to 5 events concurrently
+  backpressure_check: -> { db_overloaded? }, # Stop pulling new events if true
+  backpressure_backoff: 2.0                 # Check health again after 2 seconds
+) do |payload|
+  # business logic running within the concurrency wrapper
 end
 ```
 

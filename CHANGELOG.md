@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-06-10
+
+### Added
+- Concurrency Control & Adaptive Backpressure.
+- `SharedBroker::Concurrency::Semaphore` pure-Ruby thread-safe semaphore implementation.
+- `SharedBroker::Concurrency::Limiter` to manage dynamic backpressure checks and concurrency limits on message ingestion.
+- Integrated concurrency parameters (`max_concurrency`, `backpressure_check`, `backpressure_backoff`) into `Client#subscribe`.
+
 ## [1.4.0] - 2026-06-10
 
 ### Added
