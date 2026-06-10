@@ -79,8 +79,12 @@ SPOT_BROKER = SharedBroker::Client.new(adapter: BROKER_ADAPTER)
 
 These features can be configured optionally depending on your needs.
 
-#### A. Event Payload Validation (dry-schema)
-Register schemas to validate payload structure automatically on outbound (`publish`) and inbound (`subscribe`) boundaries:
+#### A. Event Payload Validation & Schema Registry
+
+`SharedBroker` supports validation on outbound (`publish`) and inbound (`subscribe`) boundaries. It includes a pluggable **Schema Registry** supporting both local definitions and remote registry servers.
+
+##### A1. Local Validation (dry-schema - default)
+Register schemas to validate payload structure locally using `dry-schema`:
 
 ```ruby
 user_created_schema = Dry::Schema.Params do
@@ -88,8 +92,23 @@ user_created_schema = Dry::Schema.Params do
   required(:email).filled(:string)
 end
 
+# Registered on the default local provider
 SharedBroker::Validation.register("user.created", user_created_schema)
 ```
+
+##### A2. Http Schema Registry (JSON Schema)
+Configure `SharedBroker` to fetch schemas dynamically from an HTTP-based Schema Registry. The HTTP provider validates payloads using the standard JSON Schema specification and caches schemas in-memory to prevent validation latency:
+
+```ruby
+# Configure the HTTP Schema Registry provider
+SharedBroker::SchemaRegistry.provider = SharedBroker::SchemaRegistry::Providers::Http.new(
+  url: "https://schema-registry.mycorp.internal",
+  headers: { "Authorization" => "Bearer my-secret-token" },
+  cache_ttl: 300 # cache schemas in-memory for 5 minutes
+)
+```
+When configured with the HTTP provider, any published or subscribed event will automatically trigger a lookup against `https://schema-registry.mycorp.internal/schemas/{topic}.json`.
+
 
 #### B. Custom Circuit Breaker
 By default, the client instantiates a standard Circuit Breaker. You can provide a custom one to tune the failure threshold and recovery window:

@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-06-10
+
+### Added
+- Schema Registry Integration. Support for pluggable schema registries allowing dynamic schema validation during `publish` and `subscribe` actions.
+- `Local` Schema Provider (default) leveraging `dry-schema` for backward compatibility.
+- `Http` Schema Provider fetching JSON schemas over HTTP/HTTPS with in-memory caching and TTL.
+- Validation using standard JSON Schema syntax for the `Http` provider.
+
 ## [1.3.0] - 2026-06-08
 
 ### Added
