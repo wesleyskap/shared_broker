@@ -8,6 +8,8 @@ require_relative "shared_broker/schema_registry/providers/local"
 require_relative "shared_broker/schema_registry/providers/http"
 require_relative "shared_broker/validation"
 require_relative "shared_broker/cipher"
+require_relative "shared_broker/concurrency/semaphore"
+require_relative "shared_broker/concurrency/limiter"
 require_relative "shared_broker/middleware_pipeline"
 require_relative "shared_broker/middlewares/open_telemetry_propagation"
 require_relative "shared_broker/adapters/base"
@@ -46,14 +48,22 @@ module SharedBroker
       end
     end
 
-    def subscribe(topic, queue_name, max_retries: 3, backoff_base: 2, &block)
-      resolve_adapter(topic).subscribe(topic, queue_name, max_retries: max_retries, backoff_base: backoff_base) do |raw_message|
-        decrypted_msg = SharedBroker::Cipher.decrypt(raw_message, SharedBroker.encryption_key)
-        SharedBroker::Validation.validate!(topic, decrypted_msg)
+    def subscribe(topic, queue_name, max_retries: 3, backoff_base: 2, max_concurrency: nil, backpressure_check: nil, backpressure_backoff: 1.0, &block)
+      limiter = SharedBroker::Concurrency::Limiter.new(
+        max_concurrency: max_concurrency,
+        backpressure_check: backpressure_check,
+        backpressure_backoff: backpressure_backoff
+      )
 
-        metadata = { correlation_id: decrypted_msg[:_correlation_id], operation: :subscribe, queue_name: queue_name }
-        @middleware_pipeline.execute(topic, decrypted_msg, metadata) do
-          block.call(decrypted_msg)
+      resolve_adapter(topic).subscribe(topic, queue_name, max_retries: max_retries, backoff_base: backoff_base) do |raw_message|
+        limiter.run do
+          decrypted_msg = SharedBroker::Cipher.decrypt(raw_message, SharedBroker.encryption_key)
+          SharedBroker::Validation.validate!(topic, decrypted_msg)
+
+          metadata = { correlation_id: decrypted_msg[:_correlation_id], operation: :subscribe, queue_name: queue_name }
+          @middleware_pipeline.execute(topic, decrypted_msg, metadata) do
+            block.call(decrypted_msg)
+          end
         end
       end
     end
