@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-06-16
+
+### Added
+- **Encryption Key Rotation & Granularity**: Introduced flexible topic-based encryption keys and multi-version key rotation.
+- `SharedBroker::KeyProvider::Registry` to register multiple keys by key ID and route active keys based on topic glob patterns.
+- `SharedBroker::KeyProvider::Static` for seamless backward compatibility with single global encryption keys.
+- Automatic versioning of encrypted payloads with `_key_id` metadata, enabling decrypting historical messages using rotated keys.
+
 ## [1.5.0] - 2026-06-10
 
 ### Added

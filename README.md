@@ -160,6 +160,41 @@ HYBRID_BROKER = SharedBroker::Client.new(
 )
 ```
 
+#### E. Encryption Key Rotation & Granularity
+
+If your system requires encrypting payloads with different keys based on the topic (e.g., highly sensitive financial data vs. general notifications) or rotating keys without breaking the decryption of historical messages in queues, you can configure a Key Provider Registry:
+
+```ruby
+# 1. Initialize Registry with a map of historical/current keys and active key mappings
+key_registry = SharedBroker::KeyProvider::Registry.new(
+  keys: {
+    "v1"            => "a" * 32, # historical key
+    "v2"            => "b" * 32, # current general key
+    "finance_key_1" => "c" * 32  # current finance key
+  },
+  active_keys: {
+    # Topic-specific key mapping using glob patterns
+    "payment.*" => "finance_key_1",
+    # Fallback key mapping for all other topics
+    "*"         => "v2"
+  }
+)
+
+# 2. Register key provider globally or pass it to Client initialize
+SharedBroker.key_provider = key_registry
+
+# Alternatively, pass it directly to the client
+SPOT_BROKER = SharedBroker::Client.new(
+  adapter: BROKER_ADAPTER,
+  key_provider: key_registry
+)
+```
+
+With a key provider registry configured:
+- **Publishing**: Payloads are encrypted using the active key matching the topic pattern, and a `_key_id` metadata tag is automatically appended to the envelope.
+- **Subscribing**: The gem automatically reads the `_key_id` from the payload envelope and decrypts it using the correct historical key version.
+- **Fallback**: If no `_key_id` is present on a received message (e.g., legacy message), it falls back to the key associated with the topic pattern.
+
 ---
 
 ## Usage
