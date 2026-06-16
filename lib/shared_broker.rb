@@ -8,6 +8,7 @@ require_relative "shared_broker/schema_registry/providers/local"
 require_relative "shared_broker/schema_registry/providers/http"
 require_relative "shared_broker/validation"
 require_relative "shared_broker/cipher"
+require_relative "shared_broker/key_provider"
 require_relative "shared_broker/concurrency/semaphore"
 require_relative "shared_broker/concurrency/limiter"
 require_relative "shared_broker/middleware_pipeline"
@@ -20,27 +21,29 @@ require_relative "shared_broker/adapters/redis"
 
 module SharedBroker
   class << self
-    attr_accessor :encryption_key
+    attr_accessor :encryption_key, :key_provider
   end
 
   # Default key for development/test if not set
   @encryption_key = ENV.fetch("SHARED_BROKER_ENCRYPTION_KEY") { "a" * 32 }
+  @key_provider = nil
 
   class Client
     attr_reader :circuit_breaker, :middleware_pipeline, :adapters, :routing
 
-    def initialize(adapter: nil, adapters: nil, routing: nil, circuit_breaker: nil, middlewares: nil)
+    def initialize(adapter: nil, adapters: nil, routing: nil, circuit_breaker: nil, middlewares: nil, key_provider: nil)
       setup_adapters(adapter: adapter, adapters: adapters, routing: routing)
       @circuit_breaker = circuit_breaker || CircuitBreaker.new
       resolved_middlewares = middlewares || [SharedBroker::Middlewares::OpenTelemetryPropagation.new]
       @middleware_pipeline = MiddlewarePipeline.new(resolved_middlewares)
+      @key_provider = key_provider
     end
 
     def publish(topic, message, correlation_id: nil)
       metadata = { correlation_id: correlation_id, operation: :publish }
       @middleware_pipeline.execute(topic, message, metadata) do
         SharedBroker::Validation.validate!(topic, message)
-        encrypted_msg = SharedBroker::Cipher.encrypt(message, SharedBroker.encryption_key)
+        encrypted_msg = SharedBroker::Cipher.encrypt(message, active_key_provider, topic: topic)
 
         @circuit_breaker.run do
           resolve_adapter(topic).publish(topic, encrypted_msg, correlation_id: correlation_id)
@@ -57,7 +60,7 @@ module SharedBroker
 
       resolve_adapter(topic).subscribe(topic, queue_name, max_retries: max_retries, backoff_base: backoff_base) do |raw_message|
         limiter.run do
-          decrypted_msg = SharedBroker::Cipher.decrypt(raw_message, SharedBroker.encryption_key)
+          decrypted_msg = SharedBroker::Cipher.decrypt(raw_message, active_key_provider, topic: topic)
           SharedBroker::Validation.validate!(topic, decrypted_msg)
 
           metadata = { correlation_id: decrypted_msg[:_correlation_id], operation: :subscribe, queue_name: queue_name }
@@ -69,6 +72,10 @@ module SharedBroker
     end
 
     private
+
+    def active_key_provider
+      @key_provider || SharedBroker.key_provider || SharedBroker::KeyProvider::Static.new(SharedBroker.encryption_key)
+    end
 
     def setup_adapters(adapter: nil, adapters: nil, routing: nil)
       if adapter || (adapters.nil? && routing.nil?)
