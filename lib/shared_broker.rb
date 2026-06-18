@@ -9,6 +9,7 @@ require_relative "shared_broker/schema_registry/providers/http"
 require_relative "shared_broker/validation"
 require_relative "shared_broker/cipher"
 require_relative "shared_broker/key_provider"
+require_relative "shared_broker/compressor"
 require_relative "shared_broker/concurrency/semaphore"
 require_relative "shared_broker/concurrency/limiter"
 require_relative "shared_broker/middleware_pipeline"
@@ -21,12 +22,14 @@ require_relative "shared_broker/adapters/redis"
 
 module SharedBroker
   class << self
-    attr_accessor :encryption_key, :key_provider
+    attr_accessor :encryption_key, :key_provider, :compression_algorithm, :compression_threshold
   end
 
   # Default key for development/test if not set
   @encryption_key = ENV.fetch("SHARED_BROKER_ENCRYPTION_KEY") { "a" * 32 }
   @key_provider = nil
+  @compression_algorithm = nil
+  @compression_threshold = 1024
 
   class Client
     attr_reader :circuit_breaker, :middleware_pipeline, :adapters, :routing

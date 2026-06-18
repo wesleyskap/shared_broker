@@ -22,13 +22,20 @@ module SharedBroker
 
       metadata = payload_hash.select { |k, _| k.to_s.start_with?("_") }
       data_to_encrypt = payload_hash.reject { |k, _| k.to_s.start_with?("_") }
+      json_data = data_to_encrypt.to_json
+
+      compression_alg = nil
+      if SharedBroker.compression_algorithm && json_data.bytesize > SharedBroker.compression_threshold
+        compression_alg = SharedBroker.compression_algorithm
+        json_data = SharedBroker::Compressor.compress(json_data, compression_alg)
+      end
 
       cipher = OpenSSL::Cipher.new(ALGORITHM)
       cipher.encrypt
       cipher.key = key
       iv = cipher.random_iv
 
-      encrypted_data = cipher.update(data_to_encrypt.to_json) + cipher.final
+      encrypted_data = cipher.update(json_data) + cipher.final
       auth_tag = cipher.auth_tag
 
       envelope = {
@@ -38,6 +45,7 @@ module SharedBroker
         _data: Base64.strict_encode64(encrypted_data)
       }
       envelope[:_key_id] = key_id.to_s if key_id
+      envelope[:_compression] = compression_alg.to_s if compression_alg
 
       metadata.merge(envelope)
     end
@@ -56,7 +64,14 @@ module SharedBroker
       cipher.auth_tag = Base64.strict_decode64(payload_hash[:_auth_tag])
 
       encrypted_bytes = Base64.strict_decode64(payload_hash[:_data])
-      decrypted_json = cipher.update(encrypted_bytes) + cipher.final
+      decrypted_raw = cipher.update(encrypted_bytes) + cipher.final
+
+      compression_alg = payload_hash[:_compression]
+      decrypted_json = if compression_alg
+                         SharedBroker::Compressor.decompress(decrypted_raw, compression_alg)
+                       else
+                         decrypted_raw
+                       end
 
       decrypted_data = JSON.parse(decrypted_json, symbolize_names: true)
       
@@ -93,6 +108,7 @@ module SharedBroker
       metadata.delete(:_auth_tag)
       metadata.delete(:_data)
       metadata.delete(:_key_id)
+      metadata.delete(:_compression)
     end
   end
 end
