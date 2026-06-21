@@ -46,6 +46,23 @@ module SharedBroker
       def published_messages(topic)
         @storage[topic]
       end
+
+      def redrive_dlq(dlq_name, original_topic, limit: nil)
+        dlq_messages = @storage[dlq_name]
+        return if dlq_messages.empty?
+
+        to_redrive = limit ? dlq_messages.first(limit) : dlq_messages.dup
+        to_redrive.each do |msg|
+          cleaned_msg = msg.dup
+          cleaned_msg.delete(:_x_original_routing_key)
+          cleaned_msg.delete(:_x_failed_at)
+          cleaned_msg.delete(:_x_exception_class)
+          cleaned_msg.delete(:_x_exception_message)
+
+          publish(original_topic, cleaned_msg, correlation_id: cleaned_msg[:_correlation_id])
+          @storage[dlq_name].delete(msg)
+        end
+      end
     end
   end
 end

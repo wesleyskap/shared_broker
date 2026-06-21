@@ -54,6 +54,24 @@ module SharedBroker
         end
       end
 
+      def redrive_dlq(dlq_name, original_topic, limit: nil)
+        dlq_queue = @channel.queue(dlq_name, durable: true)
+        count = 0
+
+        loop do
+          break if limit && count >= limit
+          delivery_info, metadata, payload = dlq_queue.pop(manual_ack: true)
+          break unless delivery_info
+
+          options = { routing_key: original_topic }
+          options[:correlation_id] = metadata.correlation_id if metadata&.correlation_id
+          @exchange.publish(payload, options)
+
+          @channel.acknowledge(delivery_info.delivery_tag, false)
+          count += 1
+        end
+      end
+
       def close
         @channel.close if @channel
         @connection.close if @connection
