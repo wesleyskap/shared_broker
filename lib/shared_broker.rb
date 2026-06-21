@@ -14,6 +14,8 @@ require_relative "shared_broker/concurrency/semaphore"
 require_relative "shared_broker/concurrency/limiter"
 require_relative "shared_broker/middleware_pipeline"
 require_relative "shared_broker/middlewares/open_telemetry_propagation"
+require_relative "shared_broker/middlewares/idempotency"
+require_relative "shared_broker/dlq/redriver"
 require_relative "shared_broker/adapters/base"
 require_relative "shared_broker/adapters/in_memory"
 require_relative "shared_broker/adapters/rabbit_mq"
@@ -50,6 +52,24 @@ module SharedBroker
 
         @circuit_breaker.run do
           resolve_adapter(topic).publish(topic, encrypted_msg, correlation_id: correlation_id)
+        end
+      end
+    end
+
+    def publish_batch(topic, messages, correlation_id: nil)
+      unless messages.is_a?(Array)
+        raise ArgumentError, "Expected messages to be an Array, got #{messages.class} with value #{messages.inspect}"
+      end
+
+      processed_messages = messages.map do |message|
+        SharedBroker::Validation.validate!(topic, message)
+        SharedBroker::Cipher.encrypt(message, active_key_provider, topic: topic)
+      end
+
+      metadata = { correlation_id: correlation_id, operation: :publish_batch }
+      @middleware_pipeline.execute(topic, processed_messages, metadata) do
+        @circuit_breaker.run do
+          resolve_adapter(topic).publish_batch(topic, processed_messages, correlation_id: correlation_id)
         end
       end
     end

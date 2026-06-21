@@ -195,6 +195,24 @@ With a key provider registry configured:
 - **Subscribing**: The gem automatically reads the `_key_id` from the payload envelope and decrypts it using the correct historical key version.
 - **Fallback**: If no `_key_id` is present on a received message (e.g., legacy message), it falls back to the key associated with the topic pattern.
 
+#### F. Automatic Payload Compression
+
+To optimize network bandwidth and storage costs, `SharedBroker` can automatically compress large payloads before encrypting them. You can configure compression globally:
+
+```ruby
+# Enable compression using either :gzip or :deflate (nil by default)
+SharedBroker.compression_algorithm = :gzip
+
+# Set the threshold in bytes. Payloads smaller than this will NOT be compressed.
+# This avoids the overhead of compression for tiny messages.
+SharedBroker.compression_threshold = 1024 # 1 KB
+```
+
+When compression is active:
+- **Publishing**: If the payload size exceeds the threshold, it is compressed, marked with the `_compression` tag in the metadata envelope, and then encrypted.
+- **Subscribing**: The consumer checks for the `_compression` tag, decrypts the payload, and automatically decompresses it before passing it to your subscriber block.
+- **Compatibility**: If a consumer receives a message that has no `_compression` tag, it will bypass decompression and decrypt normally.
+
 ---
 
 ## Usage
@@ -232,6 +250,49 @@ SPOT_BROKER.subscribe(
 ) do |payload|
   # business logic running within the concurrency wrapper
 end
+```
+
+
+### Publishing Events in Batch
+Send multiple events at once:
+
+```ruby
+events = [
+  { id: 1, email: "alice@example.com" },
+  { id: 2, email: "bob@example.com" }
+]
+
+# Validates and encrypts all payloads, then publishes them in a batch
+SPOT_BROKER.publish_batch("user.created", events)
+```
+
+### Subscriber Idempotency Middleware
+Configure deduplication of messages using the Idempotency Middleware. It skips already processed messages by checking their `correlation_id` (uses an internal in-memory store by default, but accepts duck-typed stores like `Rails.cache`):
+
+```ruby
+# Initialize with custom store and cache expiration (default 3600 seconds)
+idempotency = SharedBroker::Middlewares::Idempotency.new(
+  store: Rails.cache,
+  expires_in: 86400 # 1 day
+)
+
+SPOT_BROKER = SharedBroker::Client.new(
+  adapter: BROKER_ADAPTER,
+  middlewares: [idempotency]
+)
+```
+
+### DLQ Redrive Utility
+Move failed messages back to the original queue for reprocessing after bug fixes:
+
+```ruby
+# Redrives up to 50 messages from DLQ list/queue to original topic
+SharedBroker::DLQ::Redriver.redrive(
+  SPOT_BROKER, 
+  "my_consumption_queue.dlq", 
+  "user.created", 
+  limit: 50
+)
 ```
 
 ---

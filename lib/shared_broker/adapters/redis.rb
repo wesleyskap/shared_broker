@@ -47,6 +47,20 @@ module SharedBroker
         end
       end
 
+      def redrive_dlq(dlq_name, original_topic, limit: nil)
+        count = 0
+        loop do
+          break if limit && count >= limit
+          raw_json = @redis.lpop(dlq_name)
+          break unless raw_json
+
+          dlq_data = JSON.parse(raw_json, symbolize_names: true)
+          original_payload = dlq_data[:payload]
+          publish(original_topic, original_payload, correlation_id: original_payload[:_correlation_id])
+          count += 1
+        end
+      end
+
       private
 
       def publish_to_dlq(topic, queue_name, payload_json, exception)
