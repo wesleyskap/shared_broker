@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-06-21
+
+### Added
+- **Resilience & Advanced Processing**:
+  - **Batch Publishing**: Added `publish_batch` method in `SharedBroker::Client` and adapter classes, verifying schemas and encrypting payloads individually before transmission.
+  - **Deduplication / Idempotency**: Created `SharedBroker::Middlewares::Idempotency` to deduplicate consumed messages by tracking their `correlation_id` against a memory or cache-based store (such as `Rails.cache`).
+  - **DLQ Redrive**: Created `SharedBroker::DLQ::Redriver` utility along with `redrive_dlq` on memory, Redis, and RabbitMQ adapters to pull failed messages from DLQs back into active queues.
+
+## [1.7.0] - 2026-06-18
+
+### Added
+- **Automatic Payload Compression**: Decoupled payload compression mechanism for publishing and subscribing.
+- `SharedBroker::Compressor` supporting standard `:gzip` and `:deflate` algorithms.
+- Configurable global `compression_algorithm` and `compression_threshold` limits to prevent compressing small payloads.
+- Automatic versioning of encrypted and compressed payloads via the `_compression` tag.
+
 ## [1.6.0] - 2026-06-16
 
 ### Added

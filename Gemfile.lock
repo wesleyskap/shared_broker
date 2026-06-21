@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    shared_broker (1.7.0)
+    shared_broker (1.8.0)
       bunny (~> 2.22)
       dry-schema (~> 1.13)
       json-schema (~> 4.0)
