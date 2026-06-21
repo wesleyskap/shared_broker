@@ -19,6 +19,8 @@ module SharedBroker
           attempts = 0
           begin
             sub[:block].call(msg_with_metadata)
+          rescue SharedBroker::ShutdownError => e
+            raise e
           rescue => e
             attempts += 1
             if attempts <= sub[:max_retries]

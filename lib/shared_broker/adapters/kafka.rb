@@ -41,6 +41,8 @@ module SharedBroker
             attempts = 0
             begin
               block.call(data)
+            rescue SharedBroker::ShutdownError
+              consumer.stop
             rescue => e
               attempts += 1
               if attempts <= max_retries
