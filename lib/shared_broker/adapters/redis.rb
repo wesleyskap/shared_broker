@@ -33,6 +33,8 @@ module SharedBroker
               attempts = 0
               begin
                 block.call(data)
+              rescue SharedBroker::ShutdownError
+                @redis.unsubscribe
               rescue => e
                 attempts += 1
                 if attempts <= max_retries

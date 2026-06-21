@@ -41,6 +41,8 @@ module SharedBroker
           begin
             block.call(data)
             @channel.acknowledge(delivery_info.delivery_tag, false)
+          rescue SharedBroker::ShutdownError
+            # Do not acknowledge or send to DLQ. Let RabbitMQ re-queue the message.
           rescue => e
             attempts += 1
             if attempts <= max_retries

@@ -23,8 +23,10 @@ require_relative "shared_broker/adapters/kafka"
 require_relative "shared_broker/adapters/redis"
 
 module SharedBroker
+  ShutdownError = Class.new(StandardError)
+
   class << self
-    attr_accessor :encryption_key, :key_provider, :compression_algorithm, :compression_threshold
+    attr_accessor :encryption_key, :key_provider, :compression_algorithm, :compression_threshold, :cache_store, :shutdown_requested, :registered_clients
   end
 
   # Default key for development/test if not set
@@ -32,6 +34,30 @@ module SharedBroker
   @key_provider = nil
   @compression_algorithm = nil
   @compression_threshold = 1024
+  @cache_store = nil
+  @shutdown_requested = false
+  @registered_clients = []
+  @registered_clients_mutex = Mutex.new
+
+  def self.register_client(client)
+    @registered_clients_mutex.synchronize do
+      @registered_clients << client
+    end
+  end
+
+  def self.shutdown!(timeout: 10)
+    @shutdown_requested = true
+    
+    threads = @registered_clients_mutex.synchronize do
+      @registered_clients.flat_map(&:active_threads)
+    end
+
+    threads.each { |t| t.join(timeout) }
+  end
+
+  def self.reset_shutdown!
+    @shutdown_requested = false
+  end
 
   class Client
     attr_reader :circuit_breaker, :middleware_pipeline, :adapters, :routing
@@ -42,6 +68,21 @@ module SharedBroker
       resolved_middlewares = middlewares || [SharedBroker::Middlewares::OpenTelemetryPropagation.new]
       @middleware_pipeline = MiddlewarePipeline.new(resolved_middlewares)
       @key_provider = key_provider
+      @running_threads = []
+      @running_threads_mutex = Mutex.new
+      SharedBroker.register_client(self)
+    end
+
+    def register_thread(thread)
+      @running_threads_mutex.synchronize do
+        @running_threads << thread
+      end
+    end
+
+    def active_threads
+      @running_threads_mutex.synchronize do
+        @running_threads.select(&:alive?)
+      end
     end
 
     def publish(topic, message, correlation_id: nil)
@@ -81,8 +122,12 @@ module SharedBroker
         backpressure_backoff: backpressure_backoff
       )
 
-      resolve_adapter(topic).subscribe(topic, queue_name, max_retries: max_retries, backoff_base: backoff_base) do |raw_message|
+      res = resolve_adapter(topic).subscribe(topic, queue_name, max_retries: max_retries, backoff_base: backoff_base) do |raw_message|
+        raise SharedBroker::ShutdownError, "Shutdown requested" if SharedBroker.shutdown_requested
+
         limiter.run do
+          raise SharedBroker::ShutdownError, "Shutdown requested" if SharedBroker.shutdown_requested
+
           decrypted_msg = SharedBroker::Cipher.decrypt(raw_message, active_key_provider, topic: topic)
           SharedBroker::Validation.validate!(topic, decrypted_msg)
 
@@ -92,6 +137,9 @@ module SharedBroker
           end
         end
       end
+
+      register_thread(res) if res.is_a?(Thread)
+      res
     end
 
     private
