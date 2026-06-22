@@ -22,6 +22,7 @@ require_relative "shared_broker/adapters/rabbit_mq"
 require_relative "shared_broker/adapters/kafka"
 require_relative "shared_broker/adapters/redis"
 require_relative "shared_broker/adapters/aws_sqs_sns"
+require_relative "shared_broker/adapters/active_job"
 
 module SharedBroker
   ShutdownError = Class.new(StandardError)
